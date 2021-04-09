@@ -50,6 +50,9 @@ def main() -> None:
             help='Never skip pushing commits, even if the contents didn\'t change '
                  '(use this if you\'ve only updated the commit message).')
         subparser.add_argument(
+            '--auto-import', action='store_true',
+            help='[fb-only] Immediately use ghimport to import the resulting pull request.')
+        subparser.add_argument(
             '--draft', action='store_true',
             help='Create the pull request in draft mode (only if it has not already been created)')
 
@@ -107,6 +110,7 @@ def main() -> None:
                 short=args.short,
                 force=args.force,
                 no_skip=args.no_skip,
+                auto_import=args.auto_import,
                 draft=args.draft,
                 github_url=conf.github_url,
                 remote_name=conf.remote_name,

@@ -2,6 +2,7 @@
 
 import logging
 import re
+import shutil
 from dataclasses import dataclass
 from typing import List, NamedTuple, Optional, Set, Tuple
 
@@ -118,6 +119,7 @@ def main(*,
          repo_name: Optional[str] = None,
          short: bool = False,
          force: bool = False,
+         auto_import: bool = False,
          no_skip: bool = False,
          draft: bool = False,
          github_url: str,
@@ -190,6 +192,14 @@ def main(*,
                           remote_name=remote_name)
     submitter.prepare_updates()
     submitter.push_updates()
+
+    if auto_import:
+        ghimport = shutil.which("ghimport")
+        if not ghimport:
+            raise RuntimeError("ghimport was not found on the PATH, cannot import")
+        url = submitter.format_url(submitter.find_top_of_stack())
+        print(f"Importing {url}")
+        sh.sh([ghimport, "-s", url])
 
     # NB: earliest first
     return submitter.stack_meta
@@ -906,6 +916,22 @@ Since we cannot proceed, ghstack will abort now.
                 skip = False
                 self.process_new_commit(s)
 
+    def find_top_of_stack(self):
+        top_of_stack = None
+        for x in self.stack_meta:
+            if x is not None:
+                top_of_stack = x
+        assert top_of_stack is not None
+
+        return top_of_stack
+
+    def format_url(self, s: DiffMeta) -> str:
+        return ("https://{github_url}/{owner}/{repo}/pull/{number}"
+                .format(github_url=self.github_url,
+                        owner=self.repo_owner,
+                        repo=self.repo_name,
+                        number=s.number))
+
     def push_updates(self, *, import_help: bool = True) -> None:  # noqa: C901
         """
         To be called after prepare_updates: actually push the updates to
@@ -974,17 +1000,10 @@ Since we cannot proceed, ghstack will abort now.
             self.sh.git("push", self.remote_name, "--force", *force_push_branches)
             self.github.push_hook(force_push_branches)
 
-        # Report what happened
-        def format_url(s: DiffMeta) -> str:
-            return ("https://{github_url}/{owner}/{repo}/pull/{number}"
-                    .format(github_url=self.github_url,
-                            owner=self.repo_owner,
-                            repo=self.repo_name,
-                            number=s.number))
 
         if self.short:
             # Guarantee that the FIRST PR URL is the top of the stack
-            print('\n'.join(format_url(s) for s in reversed(self.stack_meta) if s is not None))
+            print('\n'.join(self.format_url(s) for s in reversed(self.stack_meta) if s is not None))
             return
 
         print()
@@ -994,25 +1013,21 @@ Since we cannot proceed, ghstack will abort now.
             for s in reversed(self.stack_meta):
                 if s is None:
                     continue
-                url = format_url(s)
+                url = self.format_url(s)
                 print(" - {} {}".format(s.what, url))
 
             print()
             if import_help:
-                top_of_stack = None
-                for x in self.stack_meta:
-                    if x is not None:
-                        top_of_stack = x
-                assert top_of_stack is not None
+                top_of_stack = self.find_top_of_stack()
 
                 print("Facebook employees can import your changes by running ")
                 print("(on a Facebook machine):")
                 print()
-                print("    ghimport -s {}".format(format_url(top_of_stack)))
+                print("    ghimport -s {}".format(self.format_url(top_of_stack)))
                 print()
                 print("If you want to work on this diff stack on another machine:")
                 print()
-                print("    ghstack checkout {}".format(format_url(top_of_stack)))
+                print("    ghstack checkout {}".format(self.format_url(top_of_stack)))
                 print("")
         else:
             print("No pull requests updated; all commits in your diff stack were empty!")
